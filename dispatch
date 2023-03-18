@@ -1,0 +1,21 @@
+#!/bin/bash
+# Install the centos dependencies needed to run the charm code.
+
+set -e
+
+
+if ! [[ -f ".installed" ]];
+then
+    # Source the os-release information into the env.
+    . /etc/os-release
+    # Detect if we are running CentOS7, if so, install python3 in order to run the charm code.
+    if [[ $ID == "centos" ]] && [[ $VERSION_ID == "7" ]];
+    then
+        # Install dependencies needed to run the charm code.
+        yum -y install epel-release
+        #yum -y install python3
+        touch .installed
+    fi
+fi
+
+JUJU_DISPATCH_PATH="${JUJU_DISPATCH_PATH:-$0}" PYTHONPATH=lib:venv ./src/charm.py

@@ -1,0 +1,43 @@
+name: infiniband
+
+subordinate: true
+
+summary: |
+    Mellanox InfiniBand operator, responsible for installing and removing
+    InfiniBand drivers.
+
+maintainers:
+    - OmniVector Solutions <admin@omnivector.solutions>
+
+description: |
+    This charm will install Mellanox InfiniBand drivers for centos7 and ubuntu
+    20.04 & 22.04 operating systems.
+
+tags:
+    - hpc
+    - infiniband
+    - mellanox
+
+series:
+    - jammy
+    - focal
+    - centos7
+
+requires:
+  juju-info:
+    interface: juju-info
+    scope: container
+
+resources:
+  yum-repo:
+    type: file
+    filename: infiniband.repo  
+    description: >
+        Yum repository file for the InfiniBand driver. 
+        This will be moved to /etc/yum.repos.d/infiniband.repo on CentOS7.
+  apt-repo:
+    type: file
+    filename: infiniband.list  
+    description: >
+        Apt-get repository file for the InfiniBand driver. 
+        This will be moved to /etc/apt/sources.list.d/infiniband.list on Ubuntu.
