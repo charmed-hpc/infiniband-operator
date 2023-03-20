@@ -13,7 +13,7 @@ then
     then
         # Install dependencies needed to run the charm code.
         yum -y install epel-release
-        #yum -y install python3
+        yum -y install python3
         touch .installed
     fi
 fi

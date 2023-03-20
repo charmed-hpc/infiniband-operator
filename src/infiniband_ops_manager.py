@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """InfiniBand install, remove and return version."""
 import logging
+import tempfile
 from pathlib import Path
 from subprocess import CalledProcessError, check_output, run
 
@@ -18,6 +19,24 @@ def os_release():
     return {k: v.strip('"') for k, v in os_release_list}
 
 
+def arch() -> str:
+    """Return the system architecture."""
+    try:
+        arch = check_output(["/bin/arch"])
+    except CalledProcessError:
+        raise InfinibandOpsError("Error detecting system architecture.")
+    return arch.decode().strip()
+
+
+def uname_r() -> str:
+    """Return the kernel version."""
+    try:
+        kernel_version = check_output(["/usr/bin/uname", "-r"])
+    except CalledProcessError:
+        raise InfinibandOpsError("Error detecting kernel version.")
+    return kernel_version.decode().strip()
+
+
 class InfinibandOpsError(Exception):
     """Error raised for infiniband installation errors."""
 
@@ -32,24 +51,6 @@ class InfinibandOpsManagerBase:
     def __init__(self):
         self._driver_package = "mlnx-ofed-all"
         self._ib_systemd_service = "openibd.service"
-
-    @property
-    def _arch(self) -> str:
-        """Return the system architecture."""
-        try:
-            arch = check_output(["/bin/arch"])
-        except CalledProcessError:
-            raise InfinibandOpsError("Error detecting system architecture.")
-        return arch.decode().strip()
-
-    @property
-    def _uname_r(self) -> str:
-        """Return the kernel version."""
-        try:
-            kernel_version = check_output(["/usr/bin/uname", "-r"])
-        except CalledProcessError:
-            raise InfinibandOpsError("Error detecting kernel version.")
-        return kernel_version.decode().strip()
 
     def install(self) -> None:
         """Install Infiniband driver here."""
@@ -121,21 +122,24 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
         else:
             raise InfinibandOpsError("No InfiniBand repository provided")
 
-        # download the GPG key
+        # GPG key url
         key_url = "http://www.mellanox.com/downloads/ofed/RPM-GPG-KEY-Mellanox"
-        tmp_key_path = Path("/tmp/mellanox.gpg")
 
-        try:
-            key_req = requests.get(key_url)
-        except requests.exceptions.HTTPError:
-            raise InfinibandOpsError(f"Error getting InfiniBand GPG key {key_url}")
+        # download the GPG key on tmp file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_key_path = Path(f"{tmpdir}/mellanox.gpg")
 
-        tmp_key_path.write_text(key_req.text)
+            try:
+                key_req = requests.get(key_url)
+            except requests.exceptions.HTTPError:
+                raise InfinibandOpsError(f"Error getting InfiniBand GPG key {key_url}")
 
-        try:
-            run(["apt-key", "add", str(tmp_key_path)])
-        except CalledProcessError:
-            raise InfinibandOpsError("Failed to add InfiniBand GPG key")
+            tmp_key_path.write_text(key_req.text)
+
+            try:
+                run(["apt-key", "add", str(tmp_key_path)])
+            except CalledProcessError:
+                raise InfinibandOpsError("Failed to add InfiniBand GPG key")
 
         logger.info("InfiniBand repository configured")
 
@@ -151,8 +155,9 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
             raise InfinibandOpsError("Error running `apt-get update`")
 
         # install the kernel headers
+        uname = uname_r()
         try:
-            run(["apt-get", "install", "-y", f"linux-headers-{self._uname_r}"])
+            run(["apt-get", "install", "-y", f"linux-headers-{uname}"])
         except CalledProcessError:
             raise InfinibandOpsError("Error installing kernel headers")
 
@@ -221,14 +226,17 @@ class InfinibandOpsManagerCentos(InfinibandOpsManagerBase):
 
         # Add the devel kernel and kernel headers
         logger.info("Installing kernel devel and headers")
+
+        uname = uname_r()
+
         try:
             run(
                 [
                     "yum",
                     "install",
                     "-y",
-                    f"kernel-devel-{self._uname_r}",
-                    f"kernel-headers-{self._uname_r}",
+                    f"kernel-devel-{uname}",
+                    f"kernel-headers-{uname}",
                 ]
             )
         except CalledProcessError:
