@@ -10,7 +10,7 @@ from infiniband_ops_manager import (
 )
 from ops.charm import CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus, ModelError
+from ops.model import ActiveStatus, BlockedStatus, ModelError, WaitingStatus
 
 logger = logging.getLogger()
 
@@ -23,15 +23,20 @@ class InfinibandOperator(CharmBase):
         super().__init__(*args)
 
         if os_release()["ID"] == "ubuntu":
-            self.repo_path = self.model.resources.fetch('apt-repo')
+            self.resource_name = "apt-repo"
             self._infiniband_ops_manager = InfinibandOpsManagerUbuntu()
         else:
-            self.repo_path = self.model.resources.fetch('yum-repo')
+            self.resource_name = "yum-repo"
             self._infiniband_ops_manager = InfinibandOpsManagerCentos()
 
         event_handler_bindings = {
             self.on.install: self._on_install,
             self.on.remove: self._on_remove,
+            self.on.modprobe_action: self.modprobe_action,
+            self.on.start_action: self.start_action,
+            self.on.enable_action: self.enable_action,
+            self.on.stop_action: self.stop_action,
+            self.on.is_active_action: self.is_active_action,
         }
         for event, handler in event_handler_bindings.items():
             self.framework.observe(event, handler)
@@ -41,13 +46,14 @@ class InfinibandOperator(CharmBase):
         install_msg = "Installing Infiniband drivers..."
         logger.info(install_msg)
         self.unit.status = WaitingStatus(install_msg)
-        
+
         # get the repo file resource
-        try:            
-            logger.info(f"Get InfiniBand repo file in {self.repo_path}")
+        try:
+            logger.info(f"Getting InfiniBand repo file: {self.resource_name}")
+            self.repo_path = self.model.resources.fetch(self.resource_name)
         except ModelError:
-            logger.info(f"No InfiniBand repo file provided. Using a default one")
-            repo_path = None
+            logger.info("No InfiniBand repo file provided. Using a default one")
+            self.repo_path = None
 
         # install the driver
         try:
@@ -61,10 +67,9 @@ class InfinibandOperator(CharmBase):
         # Set the workload version and status.
         self.unit.set_workload_version(self._infiniband_ops_manager.version())
         self.unit.status = ActiveStatus("Ready")
-        
+
     def _on_remove(self, event):
         """Remove Infiniband drivers."""
-                
         msg = "Removing Infiniband drivers..."
         logger.info(msg)
         self.unit.status = WaitingStatus(msg)
@@ -75,7 +80,58 @@ class InfinibandOperator(CharmBase):
             logger.error(e)
             self.unit.status = BlockedStatus(e)
             event.defer()
-            return        
+            return
+
+    def modprobe_action(self, event):
+        """Modprobe the Infiniband modules."""
+        modules = [
+            "rdma_ucm",
+            "rdma_cm",
+            "ib_ipoib",
+            "mlx5_core",
+            "mlx5_ib",
+            "ib_uverbs",
+            "ib_umad",
+            "ib_cm",
+            "ib_core",
+            "mlxfw",
+        ]
+
+        msg = "Modprobing InfiniBand modules..."
+        logger.info(msg)
+        self.unit.status = WaitingStatus(msg)
+
+        try:
+            self._infiniband_ops_manager.modprobe(modules)
+        except InfinibandOpsError as e:
+            logger.error(e)
+            self.unit.status = BlockedStatus(e)
+            event.defer()
+            return
+
+        self.unit.status = ActiveStatus("Ready")
+
+    def start_action(self, event):
+        """Start Infiniband systemd service."""
+        logger.debug("Starting Infiniband service")
+        self._infiniband_ops_manager.start()
+
+    def enable_action(self, event):
+        """Enable Infiniband systemd service."""
+        logger.debug("Enabling Infiniband service")
+        self._infiniband_ops_manager.enable()
+
+    def stop_action(self, event):
+        """Stop Infiniband systemd service."""
+        logger.debug("Stopping Infiniband service")
+        self._infiniband_ops_manager.stop()
+
+    def is_active_action(self, event):
+        """Check if Infiniband systemd service is arctive."""
+        status = self._infiniband_ops_manager.is_active()
+        logger.debug(f"Infiniband service is-active: {status}")
+        event.set_results({"infiniband-is-active": status})
+
 
 if __name__ == "__main__":
     main(InfinibandOperator)

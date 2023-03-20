@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """InfiniBand install, remove and return version."""
-import tempfile
+import logging
 from pathlib import Path
 from subprocess import CalledProcessError, check_output, run
 
 import requests
-import logging
 
 logger = logging.getLogger()
 
@@ -32,6 +31,7 @@ class InfinibandOpsManagerBase:
 
     def __init__(self):
         self._driver_package = "mlnx-ofed-all"
+        self._ib_systemd_service = "openibd.service"
 
     @property
     def _arch(self) -> str:
@@ -60,8 +60,7 @@ class InfinibandOpsManagerBase:
         raise Exception("Inheriting object needs to define this method.")
 
     def version(self) -> str:
-        """Return the version of the InfiniBand driver"""
-        
+        """Return the version of the InfiniBand driver."""
         # get the version from ofed_info
         try:
             version = check_output(["ofed_info", "-s"])
@@ -70,51 +69,78 @@ class InfinibandOpsManagerBase:
 
         return version.decode().strip("MLNX_OFED_LINUX-:\n")
 
+    def modprobe(self, modules: list) -> None:
+        """Modprobe the Infiniband modules."""
+        for module in modules:
+            try:
+                run(["modprobe", module])
+            except CalledProcessError:
+                raise InfinibandOpsError(f"Error modprobing {module}")
+
+    def start(self) -> None:
+        """Start infiniband systemd service."""
+        run(["systemctl", "start", self._ib_systemd_service])
+
+    def enable(self) -> None:
+        """Enable infiniband systemd service."""
+        run(["systemctl", "enable", self._ib_systemd_service])
+
+    def stop(self) -> None:
+        """Stop infiniband systemd service."""
+        run(["systemctl", "stop", self._ib_systemd_service])
+
+    def is_active(self) -> bool:
+        """Check if systemd infiniband service is active."""
+        try:
+            cmd = ["systemctl", "is-active", self._ib_systemd_service]
+            r = check_output(cmd)
+            return "active" == r.decode().strip().lower()
+        except CalledProcessError as e:
+            logger.error(f"Could not check infiniband: {e}")
+
+        return False
+
 
 class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
     """InfinibandOpsManager for Ubuntu."""
 
     def __init__(self):
-        super().__init__()        
+        super().__init__()
         self._driver_repo_filepath = Path("/etc/apt/sources.list.d/infiniband.list")
 
     def _set_repository(self, repo_path: Path) -> None:
         """Set a custom repository to install Infiniband drivers."""
-        
         # Remove previous driver repo
         self._driver_repo_filepath.unlink(missing_ok=True)
-        
-        logger.info(f"Configuring InfiniBand yum repository")
+
+        logger.info("Configuring InfiniBand yum repository")
 
         if repo_path is not None:
             # move it to /etc/apt/sources.list.d/infiniband.list
             repo_path.rename(self._driver_repo_filepath)
         else:
             raise InfinibandOpsError("No InfiniBand repository provided")
-           
+
         # download the GPG key
         key_url = "http://www.mellanox.com/downloads/ofed/RPM-GPG-KEY-Mellanox"
         tmp_key_path = Path("/tmp/mellanox.gpg")
-        
-        try:                
+
+        try:
             key_req = requests.get(key_url)
         except requests.exceptions.HTTPError:
-            raise InfinibandOpsError(
-                f"Error getting InfiniBand GPG key {key_url}"
-            )
-            
+            raise InfinibandOpsError(f"Error getting InfiniBand GPG key {key_url}")
+
         tmp_key_path.write_text(key_req.text)
-        
+
         try:
-            result = check_output(["apt-key", "add", str(tmp_key_path)])
+            run(["apt-key", "add", str(tmp_key_path)])
         except CalledProcessError:
             raise InfinibandOpsError("Failed to add InfiniBand GPG key")
-        
-        logger.info(f"InfiniBand repository configured")
+
+        logger.info("InfiniBand repository configured")
 
     def install(self, repo_path: Path) -> None:
         """Install InfiniBand drivers on Ubuntu."""
-        
         # set the apt repository
         self._set_repository(repo_path)
 
@@ -129,7 +155,7 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
             run(["apt-get", "install", "-y", f"linux-headers-{self._uname_r}"])
         except CalledProcessError:
             raise InfinibandOpsError("Error installing kernel headers")
-        
+
         # install the InfiniBand drivers
         try:
             run(["apt-get", "install", "-y", self._driver_package])
@@ -137,7 +163,7 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
             raise InfinibandOpsError("Error installing InfiniBand drivers")
 
     def remove(self) -> None:
-        """Remove InfiniBand drivers from the OS"""        
+        """Remove InfiniBand drivers from the OS."""
         try:
             run(["apt-get", "-y", "remove", "--purge", self._driver_package])
         except CalledProcessError:
@@ -149,55 +175,51 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
         try:
             run(["apt-get", "update"])
         except CalledProcessError:
-            raise InfinibandOpsError("Error running `apt-get update`")    
+            raise InfinibandOpsError("Error running `apt-get update`")
 
 
 class InfinibandOpsManagerCentos(InfinibandOpsManagerBase):
     """InfinibandOpsManager for Centos7."""
 
     def __init__(self):
-        """Initialize class level variables"""
-        super().__init__()       
+        """Initialize class level variables."""
+        super().__init__()
         self._driver_repo_filepath = Path("/etc/yum.repos.d/infiniband.repo")
-        
+
     def _set_repository(self, repo_path: Path) -> None:
-        """Set a custom repository to install Infiniband drivers"""
-        
+        """Set a custom repository to install Infiniband drivers."""
         # Remove previous driver repo
         self._driver_repo_filepath.unlink(missing_ok=True)
-        
-        logger.info(f"Configuring InfiniBand yum repository")
+
+        logger.info("Configuring InfiniBand yum repository")
 
         if repo_path is not None:
             # move it to /etc/yum.repos.d/infiniband.repo
             repo_path.rename(self._driver_repo_filepath)
         else:
-            # download driver version 5.8-1.1.2.1 repo as dafault
+            # download driver version 5.8-1.1.2.1 repo as default
             repo_url = "http://linux.mellanox.com/public/repo/mlnx_ofed/5.8-1.1.2.1/rhel7.9/mellanox_mlnx_ofed.repo"
-            try:                
+            try:
                 req = requests.get(repo_url)
             except requests.exceptions.HTTPError:
-                raise InfinibandOpsError(
-                    f"Error getting InfiniBand repository from {repo_url}"
-                )
-                
+                raise InfinibandOpsError(f"Error getting InfiniBand repository from {repo_url}")
+
             self._driver_repo_filepath.write_text(req.text)
-        
-        logger.info(f"InfiniBand yum repository configured")
+
+        logger.info("InfiniBand yum repository configured")
 
     def install(self, repo_path: Path) -> None:
-        """Install Mellanox Infiniband drivers"""
-        
+        """Install Mellanox Infiniband drivers."""
         # set the yum repository
         self._set_repository(repo_path)
-        
-        # Expire the cache and update repos.        
+
+        # Expire the cache and update repos
         try:
             run(["yum", "clean", "expire-cache"])
         except CalledProcessError:
-            raise InfinibandOpsError("Error flushing the cache")        
+            raise InfinibandOpsError("Error flushing the cache")
 
-        # Add the devel kernel and kernel headers.        
+        # Add the devel kernel and kernel headers
         logger.info("Installing kernel devel and headers")
         try:
             run(
@@ -211,30 +233,27 @@ class InfinibandOpsManagerCentos(InfinibandOpsManagerBase):
             )
         except CalledProcessError:
             raise InfinibandOpsError("Error installing devel kernel headers")
-               
+
         # Install infiniband driver
         logger.info(f"Installing InfiniBand {self._driver_package} drivers")
         try:
             run(["yum", "install", "-y", self._driver_package])
-        except CalledProcessError:            
-            raise InfinibandOpsError(
-                f"Error installing InfiniBand {self._driver_package} drivers"
-            )
+        except CalledProcessError:
+            raise InfinibandOpsError(f"Error installing InfiniBand {self._driver_package} drivers")
 
     def remove(self) -> None:
-        """Remove Infiniband drivers from the system"""
-
+        """Remove Infiniband drivers from the system."""
         # Remove infiniband driver package
         try:
             run(["yum", "erase", "-y", self._driver_package])
         except CalledProcessError:
             raise InfinibandOpsError("Error removing InfiniBand drivers from the system")
-        
+
         # Remove the drivers repo
         self._driver_repo_filepath.unlink(missing_ok=True)
-        
-        # Expire the cache and update repos.        
+
+        # Expire the cache and update repos
         try:
             run(["yum", "clean", "expire-cache"])
         except CalledProcessError:
-            raise InfinibandOpsError("Error flushing the cache")        
+            raise InfinibandOpsError("Error flushing the cache")

@@ -1,0 +1,13 @@
+modprobe:
+  description: >
+    Modprobe the InfiniBand modules: rdma_ucm, rdma_cm,
+    ib_ipoib, mlx5_core, mlx5_ib, ib_uverbs, ib_umad,
+    ib_cm, ib_core, mlxfw.
+start:
+  description: Start Infiniband systemd service.
+enable:
+  description: Enable Infiniband systemd service.
+stop:
+  description: Stop Infiniband systemd service.
+is-active:
+  description: Check if Infiniband systemd service is active.
