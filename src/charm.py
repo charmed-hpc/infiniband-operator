@@ -6,9 +6,11 @@ from infiniband_ops_manager import (
     InfinibandOpsError,
     InfinibandOpsManagerCentos,
     InfinibandOpsManagerUbuntu,
+    needs_reboot,
     os_release,
 )
 from ops.charm import CharmBase
+from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, ModelError, WaitingStatus
 
@@ -18,9 +20,15 @@ logger = logging.getLogger()
 class InfinibandOperator(CharmBase):
     """Infiniband Charmed Operator."""
 
+    _stored = StoredState()
+
     def __init__(self, *args):
         """Initialize the charm."""
         super().__init__(*args)
+
+        self._stored.set_default(
+            infiniband_installed=False,
+        )
 
         if os_release()["ID"] == "ubuntu":
             self.resource_name = "apt-repo"
@@ -32,6 +40,7 @@ class InfinibandOperator(CharmBase):
         event_handler_bindings = {
             self.on.install: self._on_install,
             self.on.remove: self._on_remove,
+            self.on.update_status: self._on_update_status,
             self.on.modprobe_action: self.modprobe_action,
             self.on.ibstatus_action: self.ibstatus_action,
         }
@@ -61,9 +70,12 @@ class InfinibandOperator(CharmBase):
             event.defer()
             return
 
+        # set infiniband as installed
+        self._stored.infiniband_installed = True
+
         # Set the workload version and status.
         self.unit.set_workload_version(self._infiniband_ops_manager.version())
-        self.unit.status = ActiveStatus("Ready")
+        self.unit.status = BlockedStatus("Machine needs reboot")
 
     def _on_remove(self, event):
         """Remove Infiniband drivers."""
@@ -78,6 +90,11 @@ class InfinibandOperator(CharmBase):
             self.unit.status = BlockedStatus(e)
             event.defer()
             return
+
+    def _on_update_status(self, event):
+        """Handle update status."""
+        if not needs_reboot() and self._stored.infiniband_installed:
+            self.unit.status = ActiveStatus("Ready")
 
     def modprobe_action(self, event):
         """Modprobe the Infiniband modules."""

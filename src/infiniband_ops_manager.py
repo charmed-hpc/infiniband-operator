@@ -37,6 +37,13 @@ def uname_r() -> str:
     return kernel_version.decode().strip()
 
 
+def needs_reboot() -> bool:
+    """Return True if the machine needs to be rebooted."""
+    if Path("/var/run/reboot-required").exists():
+        return True
+    return False
+
+
 class InfinibandOpsError(Exception):
     """Error raised for infiniband installation errors."""
 
@@ -154,6 +161,9 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
         except CalledProcessError:
             raise InfinibandOpsError("Error installing InfiniBand drivers")
 
+        # request a system reboot
+        Path("/var/run/reboot-required").touch()
+
     def remove(self) -> None:
         """Remove InfiniBand drivers from the OS."""
         try:
@@ -237,6 +247,9 @@ class InfinibandOpsManagerCentos(InfinibandOpsManagerBase):
             run(["yum", "install", "-y", self._driver_package])
         except CalledProcessError:
             raise InfinibandOpsError(f"Error installing InfiniBand {self._driver_package} drivers")
+
+        # request a system reboot
+        Path("/var/run/reboot-required").touch()
 
     def remove(self) -> None:
         """Remove Infiniband drivers from the system."""
