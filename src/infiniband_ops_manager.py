@@ -112,7 +112,8 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
     def _set_repository(self, repo_path: Path) -> None:
         """Set a custom repository to install Infiniband drivers."""
         # Remove previous driver repo
-        self._driver_repo_filepath.unlink(missing_ok=True)
+        if self._driver_repo_filepath.exists():
+            self._driver_repo_filepath.unlink()
 
         logger.info("Configuring InfiniBand yum repository")
 
@@ -175,7 +176,8 @@ class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
             raise InfinibandOpsError("Error removing InfiniBand drivers")
 
         # Remove the drivers repo
-        self._driver_repo_filepath.unlink(missing_ok=True)
+        if self._driver_repo_filepath.exists():
+            self._driver_repo_filepath.unlink()
 
         try:
             run(["apt-get", "update"])
@@ -194,7 +196,8 @@ class InfinibandOpsManagerCentos(InfinibandOpsManagerBase):
     def _set_repository(self, repo_path: Path) -> None:
         """Set a custom repository to install Infiniband drivers."""
         # Remove previous driver repo
-        self._driver_repo_filepath.unlink(missing_ok=True)
+        if self._driver_repo_filepath.exists():
+            self._driver_repo_filepath.unlink()
 
         logger.info("Configuring InfiniBand yum repository")
 
@@ -258,7 +261,8 @@ class InfinibandOpsManagerCentos(InfinibandOpsManagerBase):
             raise InfinibandOpsError("Error removing InfiniBand drivers from the system")
 
         # Remove the drivers repo
-        self._driver_repo_filepath.unlink(missing_ok=True)
+        if self._driver_repo_filepath.exists():
+            self._driver_repo_filepath.unlink()
 
         # Expire the cache and update repos
         try:
