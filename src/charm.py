@@ -33,10 +33,7 @@ class InfinibandOperator(CharmBase):
             self.on.install: self._on_install,
             self.on.remove: self._on_remove,
             self.on.modprobe_action: self.modprobe_action,
-            self.on.start_action: self.start_action,
-            self.on.enable_action: self.enable_action,
-            self.on.stop_action: self.stop_action,
-            self.on.is_active_action: self.is_active_action,
+            self.on.ibstatus_action: self.ibstatus_action,
         }
         for event, handler in event_handler_bindings.items():
             self.framework.observe(event, handler)
@@ -111,26 +108,10 @@ class InfinibandOperator(CharmBase):
 
         self.unit.status = ActiveStatus("Ready")
 
-    def start_action(self, event):
-        """Start Infiniband systemd service."""
-        logger.debug("Starting Infiniband service")
-        self._infiniband_ops_manager.start()
-
-    def enable_action(self, event):
-        """Enable Infiniband systemd service."""
-        logger.debug("Enabling Infiniband service")
-        self._infiniband_ops_manager.enable()
-
-    def stop_action(self, event):
-        """Stop Infiniband systemd service."""
-        logger.debug("Stopping Infiniband service")
-        self._infiniband_ops_manager.stop()
-
-    def is_active_action(self, event):
-        """Check if Infiniband systemd service is arctive."""
-        status = self._infiniband_ops_manager.is_active()
-        logger.debug(f"Infiniband service is-active: {status}")
-        event.set_results({"infiniband-is-active": status})
+    def ibstatus_action(self, event):
+        """Show the InfiniBand status."""
+        status = self._infiniband_ops_manager.ibstatus()
+        event.set_results({"infiniband-status": status})
 
 
 if __name__ == "__main__":

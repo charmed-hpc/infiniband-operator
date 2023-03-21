@@ -50,7 +50,6 @@ class InfinibandOpsManagerBase:
 
     def __init__(self):
         self._driver_package = "mlnx-ofed-all"
-        self._ib_systemd_service = "openibd.service"
 
     def install(self) -> None:
         """Install Infiniband driver here."""
@@ -78,28 +77,15 @@ class InfinibandOpsManagerBase:
             except CalledProcessError:
                 raise InfinibandOpsError(f"Error modprobing {module}")
 
-    def start(self) -> None:
-        """Start infiniband systemd service."""
-        run(["systemctl", "start", self._ib_systemd_service])
-
-    def enable(self) -> None:
-        """Enable infiniband systemd service."""
-        run(["systemctl", "enable", self._ib_systemd_service])
-
-    def stop(self) -> None:
-        """Stop infiniband systemd service."""
-        run(["systemctl", "stop", self._ib_systemd_service])
-
-    def is_active(self) -> bool:
-        """Check if systemd infiniband service is active."""
+    def ibstatus(self) -> str:
+        """Show InfiniBand status."""
         try:
-            cmd = ["systemctl", "is-active", self._ib_systemd_service]
-            r = check_output(cmd)
-            return "active" == r.decode().strip().lower()
+            cmd = ["ibstatus"]
+            status = check_output(cmd)
         except CalledProcessError as e:
-            logger.error(f"Could not check infiniband: {e}")
+            logger.error(f"Could not check infiniband status: {e}")
 
-        return False
+        return status.decode().strip()
 
 
 class InfinibandOpsManagerUbuntu(InfinibandOpsManagerBase):
